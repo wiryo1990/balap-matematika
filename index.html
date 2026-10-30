@@ -1,587 +1,338 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
-// --- SOUND EFFECTS (Web Audio API) ---
-const playSound = (type) => {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+// --- SVG CAR (Always Facing Right) ---
+const CarSVG = ({ color }) => (
+  <svg viewBox="0 0 100 40" fill={color} className="w-16 h-8 md:w-28 md:h-14 drop-shadow-xl z-20">
+    {/* Body */}
+    <path d="M10,30 L10,20 L25,10 L60,10 L75,20 L95,20 L95,30 Z" fill={color} />
+    {/* Wheels */}
+    <circle cx="25" cy="30" r="8" fill="#1e293b" />
+    <circle cx="25" cy="30" r="4" fill="#cbd5e1" />
+    <circle cx="75" cy="30" r="8" fill="#1e293b" />
+    <circle cx="75" cy="30" r="4" fill="#cbd5e1" />
+    {/* Windows */}
+    <path d="M30,10 L45,10 L45,20 L25,20 Z" fill="#bae6fd" />
+    <path d="M50,10 L60,10 L70,20 L50,20 Z" fill="#bae6fd" />
+    {/* Headlight */}
+    <path d="M92,22 L95,22 L95,26 L92,26 Z" fill="#fde047" />
+  </svg>
+);
 
-    if (type === 'correct') {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
-      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
-    } else if (type === 'wrong') {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(220, ctx.currentTime); // A3
-      osc.frequency.setValueAtTime(164.81, ctx.currentTime + 0.15); // E3
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
-    } else if (type === 'win') {
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      osc.frequency.setValueAtTime(554.37, ctx.currentTime + 0.1);
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.2);
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
-      gain.gain.setValueAtTime(0.4, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.6);
-    }
-  } catch (e) {
-    console.error("Audio error:", e);
+// --- AUDIO UTILITY ---
+const playAudio = (type) => {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  const ctx = new AudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  if (type === 'correct') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+  } else if (type === 'wrong') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+  } else if (type === 'win') {
+    osc.type = 'triangle';
+    [440, 554, 659, 880].forEach((freq, i) => {
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + (i * 0.15));
+    });
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1);
+    osc.start();
+    osc.stop(ctx.currentTime + 1);
   }
 };
 
-// --- HELPER MATH GENERATOR ---
-const generateProblem = () => {
-  const isAddition = Math.random() > 0.3;
-  let num1, num2, answer, op;
-
-  if (isAddition) {
-    num1 = Math.floor(Math.random() * 10) + 1;
-    num2 = Math.floor(Math.random() * (20 - num1)) + 1;
-    answer = num1 + num2;
-    op = '+';
+// --- MATH LOGIC (Mudah untuk Kelas 1, Maksimal Hasil 10) ---
+const generateMath = () => {
+  const isAdd = Math.random() > 0.5;
+  let a, b, answer;
+  
+  if (isAdd) {
+    answer = Math.floor(Math.random() * 9) + 2; // 2 - 10
+    a = Math.floor(Math.random() * (answer - 1)) + 1; 
+    b = answer - a;
   } else {
-    num1 = Math.floor(Math.random() * 18) + 2;
-    num2 = Math.floor(Math.random() * num1) + 1;
-    answer = num1 - num2;
-    op = '-';
+    a = Math.floor(Math.random() * 9) + 2; // 2 - 10
+    b = Math.floor(Math.random() * (a - 1)) + 1;
+    answer = a - b;
   }
-
-  const options = new Set([answer]);
-  while (options.size < 4) {
-    let wrong = answer + (Math.floor(Math.random() * 7) - 3);
-    if (wrong >= 0 && wrong <= 20) {
-      options.add(wrong);
+  
+  const question = isAdd ? `${a} + ${b} = ?` : `${a} - ${b} = ?`;
+  
+  let options = [answer];
+  while (options.length < 4) { // Pilihan 2x2 grid = 4 opsi
+    let wrong = answer + (Math.floor(Math.random() * 7) - 3); 
+    if (wrong >= 0 && wrong <= 15 && !options.includes(wrong)) {
+      options.push(wrong);
     }
   }
-
-  return {
-    question: `${num1} ${op} ${num2} = ?`,
-    answer,
-    options: Array.from(options).sort(() => Math.random() - 0.5)
-  };
+  options.sort(() => Math.random() - 0.5);
+  
+  return { question, options, answer };
 };
 
-const CAR_COLORS = [
-  { name: 'Merah', body: '#FF4136', light: '#FF851B' },
-  { name: 'Biru', body: '#0074D9', light: '#7FDBFF' },
-  { name: 'Hijau', body: '#2ECC40', light: '#01FF70' },
-  { name: 'Kuning', body: '#FFDC00', light: '#FFF066' }
-];
+// --- LAYOUT WRAPPER (Anti-Scroll) ---
+const ScreenWrapper = ({ children, bgClass = "bg-gradient-to-b from-sky-100 to-indigo-200" }) => (
+  <div className={`h-screen w-screen overflow-hidden flex flex-col font-sans select-none touch-none ${bgClass}`}>
+    {children}
+  </div>
+);
 
+// --- MAIN APP COMPONENT ---
 export default function App() {
-  const [gameState, setGameState] = useState('TITLE'); // TITLE, NAME_INPUT, PLAYING, WIN
-  const [playerCount, setPlayerCount] = useState(2);
-  const [playerNames, setPlayerNames] = useState(['Pemain 1', 'Pemain 2', 'Pemain 3', 'Pemain 4']);
-  const [scores, setScores] = useState([0, 0, 0, 0]);
-  const [problems, setProblems] = useState([]);
+  const [step, setStep] = useState(1);
+  const [players, setPlayers] = useState([]);
   const [winner, setWinner] = useState(null);
-  const [teacherImage, setTeacherImage] = useState(null);
-  const fileInputRef = useRef(null);
+  const [numPlayers, setNumPlayers] = useState(0);
+  const [customNames, setCustomNames] = useState(['Siswa 1', 'Siswa 2', 'Siswa 3', 'Siswa 4']);
 
-  const WINNING_SCORE = 5;
+  const THEMES = [
+    { id: 1, color: '#ef4444', bg: 'bg-red-200', text: 'text-red-900', btn: 'bg-red-500 shadow-[0_6px_0_#991b1b]', name: 'Siswa 1' },
+    { id: 2, color: '#3b82f6', bg: 'bg-blue-200', text: 'text-blue-900', btn: 'bg-blue-500 shadow-[0_6px_0_#1e3a8a]', name: 'Siswa 2' },
+    { id: 3, color: '#10b981', bg: 'bg-green-200', text: 'text-green-900', btn: 'bg-green-500 shadow-[0_6px_0_#14532d]', name: 'Siswa 3' },
+    { id: 4, color: '#f59e0b', bg: 'bg-yellow-200', text: 'text-yellow-900', btn: 'bg-yellow-500 shadow-[0_6px_0_#a16207]', name: 'Siswa 4' }
+  ];
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setTeacherImage(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const finishLineScore = 8; // Berapa soal benar untuk menang
 
-  const startNameInput = (count) => {
-    setPlayerCount(count);
-    const initialNames = Array.from({ length: count }, (_, i) => `Pemain ${i + 1}`);
-    setPlayerNames(initialNames);
-    setGameState('NAME_INPUT');
-  };
-
-  const handleNameChange = (index, value) => {
-    const updated = [...playerNames];
-    updated[index] = value;
-    setPlayerNames(updated);
-  };
-
+  // Inisialisasi Game setelah nama diisi
   const startGame = () => {
-    setScores(Array(playerCount).fill(0));
-    setProblems(Array.from({ length: playerCount }, () => generateProblem()));
-    setGameState('PLAYING');
+    playAudio('correct');
+    const newPlayers = THEMES.slice(0, numPlayers).map((theme, index) => ({
+      ...theme,
+      name: customNames[index].trim() || theme.name, // Gunakan nama inputan
+      score: 0,
+      ...generateMath()
+    }));
+    setPlayers(newPlayers);
+    setStep(3); 
   };
 
-  const handleAnswer = (playerIndex, selectedOption) => {
-    const currentProblem = problems[playerIndex];
-    
-    if (selectedOption === currentProblem.answer) {
-      playSound('correct');
-      const newScores = [...scores];
-      newScores[playerIndex] += 1;
-      setScores(newScores);
+  // Menangani Jawaban
+  const handleAnswer = (playerId, selectedAnswer) => {
+    setPlayers(prevPlayers => {
+      const newPlayers = [...prevPlayers];
+      const playerIndex = newPlayers.findIndex(p => p.id === playerId);
+      const player = newPlayers[playerIndex];
 
-      if (newScores[playerIndex] >= WINNING_SCORE) {
-        playSound('win');
-        setWinner({ name: playerNames[playerIndex], color: CAR_COLORS[playerIndex].name });
-        setGameState('WIN');
-        return;
+      if (selectedAnswer === player.answer) {
+        playAudio('correct');
+        player.score += 1;
+        
+        if (player.score >= finishLineScore) {
+          playAudio('win');
+          setWinner(player);
+          setStep(4);
+          return newPlayers;
+        }
+      } else {
+        playAudio('wrong');
+        // Salah: Mobil diam, tetapi soal tetap berganti
       }
-    } else {
-      playSound('wrong');
-    }
 
-    // Soal SELALU berganti baik jawaban benar maupun salah
-    const newProblems = [...problems];
-    newProblems[playerIndex] = generateProblem();
-    setProblems(newProblems);
+      // Selalu ganti soal baru baik jawaban benar maupun salah
+      const nextMath = generateMath();
+      player.question = nextMath.question;
+      player.options = nextMath.options;
+      player.answer = nextMath.answer;
+
+      return newPlayers;
+    });
   };
 
-  return (
-    <div style={{
-      width: '100vw',
-      height: '100vh',
-      overflow: 'hidden',
-      fontFamily: 'Arial, sans-serif',
-      backgroundColor: '#f0f4f8',
-      display: 'flex',
-      flexDirection: 'column',
-      boxSizing: 'border-box'
-    }}>
-      {/* HEADER NAVIGATION */}
-      <div style={{
-        height: '8vh',
-        backgroundColor: '#1E293B',
-        color: '#FFFFFF',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 2rem',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-        zIndex: 10
-      }}>
-        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>🏁 Math Racing SD Kelas 1</h2>
-        {gameState !== 'TITLE' && (
-          <button
-            onClick={() => setGameState('TITLE')}
-            style={{
-              backgroundColor: '#EF4444',
-              color: 'white',
-              border: 'none',
-              padding: '0.5rem 1.2rem',
-              borderRadius: '8px',
-              fontSize: '1rem',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
+  // --- STEP 1: WELCOME & RULES SCREEN ---
+  if (step === 1) return (
+    <ScreenWrapper>
+      <div className="flex-1 flex flex-col items-center justify-around p-3 md:p-6 text-center">
+        
+        {/* Header & Judul */}
+        <div className="flex flex-col items-center animate-bounce-slow mt-1">
+          <h1 className="text-3xl md:text-5xl font-black text-white drop-shadow-[0_6px_6px_rgba(0,0,0,0.5)] tracking-tight leading-tight" style={{WebkitTextStroke: '2px #1e3a8a'}}>
+            BALAP MOBIL MATEMATIKA
+          </h1>
+          <h2 className="text-xl md:text-3xl font-extrabold text-pink-600 mt-1 drop-shadow-md">
+            ~ bersama Ibu Lia cantik ~
+          </h2>
+        </div>
+
+        {/* Aturan Bermain (Tanpa Foto) */}
+        <div className="flex items-center justify-center w-full max-w-4xl my-2 px-2">
+          <div className="w-full bg-white/95 rounded-[2rem] p-6 md:p-8 shadow-2xl border-4 border-yellow-400 flex flex-col justify-center min-h-[300px] md:h-[360px]">
+            <h3 className="text-xl md:text-3xl font-black text-indigo-900 mb-6 bg-yellow-300 inline-block px-8 py-2 rounded-full self-center shadow-sm">
+              Aturan Bermain
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 text-lg md:text-2xl font-bold text-gray-800">
+              <div className="flex gap-4 items-center bg-blue-50 p-4 md:p-5 rounded-2xl border-2 border-blue-200 shadow-sm">
+                <span className="text-3xl md:text-5xl">⚡</span> Cepat-cepatan jawab!
+              </div>
+              <div className="flex gap-4 items-center bg-green-50 p-4 md:p-5 rounded-2xl border-2 border-green-200 shadow-sm">
+                <span className="text-3xl md:text-5xl">✅</span> BENAR = Mobil maju
+              </div>
+              <div className="flex gap-4 items-center bg-red-50 p-4 md:p-5 rounded-2xl border-2 border-red-200 shadow-sm">
+                <span className="text-3xl md:text-5xl">🛑</span> SALAH = Mobil diam
+              </div>
+              <div className="flex gap-4 items-center bg-yellow-50 p-4 md:p-5 rounded-2xl border-2 border-yellow-200 shadow-sm">
+                <span className="text-3xl md:text-5xl">🏆</span> Sampai duluan menang
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={() => { playAudio('correct'); setStep(2); setNumPlayers(2); }} 
+          className="bg-green-500 hover:bg-green-600 text-white font-black text-4xl md:text-5xl px-16 py-6 rounded-[3rem] shadow-[0_12px_0_#14532d] active:translate-y-3 active:shadow-none transition-all border-8 border-white z-20 shrink-0 mt-4"
+        >
+          Lanjutkan 🚀
+        </button>
+      </div>
+    </ScreenWrapper>
+  );
+
+  // --- STEP 2: MODE & NAME INPUT ---
+  if (step === 2) return (
+    <ScreenWrapper>
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        <div className="bg-white/95 rounded-[2rem] p-8 shadow-2xl border-4 border-indigo-400 w-full max-w-2xl text-center">
+          <h2 className="text-3xl md:text-4xl font-black text-indigo-900 mb-6">Pilih Mode & Nama</h2>
+          
+          <div className="flex justify-center gap-4 mb-8">
+            {[2, 3, 4].map(num => (
+              <button 
+                key={num}
+                onClick={() => { playAudio('correct'); setNumPlayers(num); }}
+                className={`${numPlayers === num ? 'bg-indigo-600 text-white scale-110 shadow-lg' : 'bg-indigo-100 text-indigo-800'} font-bold text-xl md:text-2xl px-6 py-3 rounded-xl transition-all`}
+              >
+                {num} Pemain
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-4 mb-8 text-left">
+            {Array.from({ length: numPlayers }).map((_, idx) => (
+              <div key={idx} className="flex items-center gap-4">
+                <div className="w-8 h-8 rounded-full shadow-md border-2 border-white" style={{ backgroundColor: THEMES[idx].color }}></div>
+                <input 
+                  type="text" 
+                  maxLength={10}
+                  value={customNames[idx]}
+                  onChange={(e) => {
+                    const newNames = [...customNames];
+                    newNames[idx] = e.target.value;
+                    setCustomNames(newNames);
+                  }}
+                  className="flex-1 bg-slate-100 border-2 border-slate-300 rounded-xl px-4 py-3 text-xl font-bold focus:border-indigo-500 focus:outline-none"
+                  placeholder={`Nama Pemain ${idx + 1}`}
+                />
+              </div>
+            ))}
+          </div>
+
+          <button 
+            onClick={startGame} 
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-black text-3xl py-4 rounded-2xl shadow-[0_8px_0_#14532d] active:translate-y-2 active:shadow-none transition-all"
           >
-            Batal / Ke Menu Utama
+            Mulai Balapan! 🏁
           </button>
-        )}
+        </div>
+      </div>
+    </ScreenWrapper>
+  );
+
+  // --- STEP 3: RACING SCREEN ---
+  if (step === 3) return (
+    <ScreenWrapper bgClass="bg-slate-800">
+      {/* Header - 10vh */}
+      <div className="h-[10vh] flex items-center justify-between px-6 bg-slate-900 border-b-4 border-slate-700">
+        <h2 className="text-2xl md:text-3xl font-black text-white drop-shadow-md">🏁 Balapan Dimulai!</h2>
+        <button 
+          onClick={() => setStep(1)} 
+          className="bg-red-500 hover:bg-red-600 text-white font-bold text-lg px-6 py-2 rounded-xl shadow-[0_4px_0_#991b1b] active:translate-y-1 active:shadow-none"
+        >
+          Batal
+        </button>
       </div>
 
-      {/* BODY CONTENT */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '92vh' }}>
-        
-        {/* LAYAR UTAMA / TITLE */}
-        {gameState === 'TITLE' && (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'space-around',
-            padding: '1.5rem',
-            textAlign: 'center'
-          }}>
-            <h1 style={{ fontSize: '2.5rem', color: '#1E293B', margin: 0 }}>
-              Balapan Matematika Ibu Lia 🚗💨
-            </h1>
+      {/* Track Area - 35vh */}
+      <div className="h-[35vh] bg-slate-700 flex flex-col justify-around p-2 relative overflow-hidden">
+        {/* Finish Line Checkers */}
+        <div className="absolute right-[5%] top-0 bottom-0 w-12 z-10 opacity-90" style={{ backgroundImage: 'linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000), linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000)', backgroundSize: '20px 20px', backgroundPosition: '0 0, 10px 10px', backgroundColor: 'white' }}></div>
 
-            {/* FOTO & ATURAN BERDAMPINGAN (1/3 dan 2/3) */}
-            <div style={{
-              display: 'flex',
-              flexDirection: 'row',
-              width: '90%',
-              maxWidth: '900px',
-              height: '42vh',
-              gap: '1.5rem'
-            }}>
-              {/* FOTO IBU LIA (1/3 LAYAR - PORTRAIT/VERTIKAL) */}
-              <div style={{
-                flex: '1',
-                backgroundColor: '#FFFFFF',
-                borderRadius: '16px',
-                padding: '0.8rem',
-                border: '3px solid #CBD5E1',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-              }}>
-                <div style={{
-                  width: '100%',
-                  flex: 1,
-                  borderRadius: '12px',
-                  backgroundColor: '#E2E8F0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                  marginBottom: '0.5rem'
-                }}>
-                  {teacherImage ? (
-                    <img 
-                      src={teacherImage} 
-                      alt="Ibu Lia" 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                    />
-                  ) : (
-                    <div style={{ color: '#64748B', fontSize: '0.9rem', padding: '1rem' }}>
-                      Belum ada foto Ibu Lia
-                    </div>
-                  )}
-                </div>
+        {players.map((p) => (
+          <div key={p.id} className="relative h-full border-b-2 border-dashed border-slate-500 flex items-center">
+            <div 
+              className="absolute transition-all duration-500 ease-out z-20 flex flex-col items-center" 
+              style={{ left: `calc(10% + ${(p.score / finishLineScore) * 75}%)` }}
+            >
+              <CarSVG color={p.color} />
+              <span className="text-white font-bold text-sm md:text-base drop-shadow-[0_2px_2px_rgba(0,0,0,1)] mt-1">
+                {p.name}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
 
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  ref={fileInputRef} 
-                  onChange={handleImageUpload} 
-                  style={{ display: 'none' }} 
-                />
-
-                <button
-                  onClick={() => fileInputRef.current.click()}
-                  style={{
-                    backgroundColor: '#0EA5E9',
-                    color: 'white',
-                    border: 'none',
-                    padding: '0.4rem 0.8rem',
-                    borderRadius: '8px',
-                    fontSize: '0.85rem',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    width: '100%'
-                  }}
+      {/* Control Area - 55vh */}
+      <div className="h-[55vh] flex p-2 gap-2 bg-slate-300">
+        {players.map((p) => (
+          <div key={p.id} className={`flex-1 flex flex-col rounded-2xl p-2 ${p.bg} border-t-8 shadow-inner`} style={{ borderColor: p.color }}>
+            <div className="text-center font-black text-3xl md:text-5xl mb-2 bg-slate-900 text-white rounded-xl py-3 shadow-md">
+              {p.question}
+            </div>
+            <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-2">
+              {p.options.map(opt => (
+                <button 
+                  key={opt} 
+                  onClick={() => handleAnswer(p.id, opt)} 
+                  className={`${p.btn} text-white font-black text-4xl md:text-6xl rounded-xl active:translate-y-2 active:shadow-none transition-all flex items-center justify-center`}
                 >
-                  {teacherImage ? ' Ganti Foto Ibu Lia' : ' Unggah Foto Ibu Lia'}
+                  {opt}
                 </button>
-              </div>
-
-              {/* ATURAN BERMAIN (2/3 LAYAR) */}
-              <div style={{
-                flex: '2',
-                backgroundColor: '#FFFFFF',
-                borderRadius: '16px',
-                padding: '1.2rem',
-                border: '3px solid #CBD5E1',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                textAlign: 'left',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-              }}>
-                <h3 style={{ margin: '0 0 0.8rem 0', color: '#0F172A', fontSize: '1.3rem' }}>📋 Aturan Bermain:</h3>
-                <ul style={{ margin: 0, paddingLeft: '1.2rem', color: '#334155', fontSize: '1.05rem', lineHeight: '1.6' }}>
-                  <li>Pilih jumlah pemain yang akan bertanding.</li>
-                  <li>Masukkan nama pemain sesuai nama anak.</li>
-                  <li>Jawab soal matematika secepat mungkin dengan menyentuh tombol pilihan.</li>
-                  <li>Setiap jawaban <b>benar</b> akan melajukan mobil 1 langkah ke depan.</li>
-                  <li>Setiap menjawab (benar/salah), soal akan <b>otomatis berganti</b>.</li>
-                  <li>Pemain pertama yang mencapai garis finis (5 poin) adalah pemenangnya! 🏆</li>
-                </ul>
-              </div>
-            </div>
-
-            {/* PILIHAN MODE */}
-            <div style={{ width: '100%' }}>
-              <h3 style={{ color: '#475569', marginBottom: '0.8rem' }}>Pilih Mode Permainan:</h3>
-              <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center' }}>
-                {[2, 3, 4].map((count) => (
-                  <button
-                    key={count}
-                    onClick={() => startNameInput(count)}
-                    style={{
-                      backgroundColor: count === 2 ? '#10B981' : count === 3 ? '#F59E0B' : '#8B5CF6',
-                      color: 'white',
-                      border: 'none',
-                      padding: '1rem 2rem',
-                      borderRadius: '12px',
-                      fontSize: '1.3rem',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
-                      transition: 'transform 0.1s'
-                    }}
-                  >
-                    {count === 2 ? '⚔️ Duel (2 Pemain)' : count === 3 ? '🏎️ Bertiga (3 Pemain)' : '🏁 Berempat (4 Pemain)'}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* LAYAR PENGISIAN NAMA PEMAIN */}
-        {gameState === 'NAME_INPUT' && (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '2rem'
-          }}>
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '16px',
-              padding: '2rem',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-              width: '90%',
-              maxWidth: '500px',
-              textAlign: 'center'
-            }}>
-              <h2 style={{ color: '#1E293B', marginTop: 0 }}>Masukkan Nama Pemain</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', margin: '1.5rem 0' }}>
-                {Array.from({ length: playerCount }).map((_, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <span style={{ fontWeight: 'bold', color: CAR_COLORS[idx].body, minWidth: '80px', textAlign: 'right' }}>
-                      Mobil {CAR_COLORS[idx].name}:
-                    </span>
-                    <input
-                      type="text"
-                      maxLength={10}
-                      value={playerNames[idx]}
-                      onChange={(e) => handleNameChange(idx, e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: '0.6rem 1rem',
-                        fontSize: '1.1rem',
-                        borderRadius: '8px',
-                        border: '2px solid #CBD5E1',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={startGame}
-                style={{
-                  backgroundColor: '#10B981',
-                  color: 'white',
-                  border: 'none',
-                  padding: '0.8rem 2.5rem',
-                  borderRadius: '12px',
-                  fontSize: '1.3rem',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                Mulai Balapan! 🚀
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* LAYAR GAMEPLAY (RACETRACK & BUTTONS) */}
-        {gameState === 'PLAYING' && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-            
-            {/* LINTASAN BALAP (35% Tinggi Layar) */}
-            <div style={{
-              height: '35vh',
-              backgroundColor: '#334155',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-around',
-              padding: '0.5rem 1rem',
-              position: 'relative'
-            }}>
-              {Array.from({ length: playerCount }).map((_, idx) => {
-                const progress = (scores[idx] / WINNING_SCORE) * 82; // Max % jalan
-                return (
-                  <div key={idx} style={{
-                    height: `${80 / playerCount}%`,
-                    borderBottom: idx < playerCount - 1 ? '2px dashed #94A3B8' : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}>
-                    {/* LABELS & SCORE */}
-                    <div style={{
-                      position: 'absolute',
-                      left: '5px',
-                      zIndex: 2,
-                      color: 'white',
-                      fontWeight: 'bold',
-                      fontSize: '0.9rem',
-                      textShadow: '1px 1px 2px black'
-                    }}>
-                      {playerNames[idx]} ({scores[idx]}/{WINNING_SCORE})
-                    </div>
-
-                    {/* GARIS FINISH */}
-                    <div style={{
-                      position: 'absolute',
-                      right: '5%',
-                      height: '100%',
-                      width: '20px',
-                      backgroundColor: '#FFF',
-                      backgroundImage: 'linear-gradient(45deg, #000 25%, transparent 25%), linear-gradient(-45deg, #000 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #000 75%), linear-gradient(-45deg, transparent 75%, #000 75%)',
-                      backgroundSize: '10px 10px',
-                      backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
-                      zIndex: 1
-                    }} />
-
-                    {/* MOBIL VEKTOR SVG */}
-                    <div style={{
-                      position: 'absolute',
-                      left: `calc(10% + ${progress}%)`,
-                      transition: 'left 0.4s ease-in-out',
-                      zIndex: 3
-                    }}>
-                      <svg width="60" height="30" viewBox="0 0 100 50">
-                        <path d="M 10 35 L 20 20 L 60 20 L 80 35 L 90 35 L 90 42 L 10 42 Z" fill={CAR_COLORS[idx].body} />
-                        <path d="M 25 22 L 40 22 L 40 32 L 20 32 Z" fill="#E2E8F0" />
-                        <path d="M 45 22 L 58 22 L 72 32 L 45 32 Z" fill="#E2E8F0" />
-                        <circle cx="25" cy="42" r="8" fill="#000" />
-                        <circle cx="25" cy="42" r="3" fill="#FFF" />
-                        <circle cx="75" cy="42" r="8" fill="#000" />
-                        <circle cx="75" cy="42" r="3" fill="#FFF" />
-                      </svg>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* AREA KONTROL TOMBOL JAWABAN (57% Tinggi Layar) */}
-            <div style={{
-              height: '57vh',
-              display: 'flex',
-              padding: '0.5rem',
-              gap: '0.5rem',
-              backgroundColor: '#CBD5E1'
-            }}>
-              {Array.from({ length: playerCount }).map((_, pIdx) => (
-                <div key={pIdx} style={{
-                  flex: 1,
-                  backgroundColor: '#F8FAFC',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  padding: '0.5rem',
-                  borderTop: `6px solid ${CAR_COLORS[pIdx].body}`,
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
-                }}>
-                  {/* DISPLAY SOAL */}
-                  <div style={{
-                    backgroundColor: '#1E293B',
-                    color: '#FFF',
-                    borderRadius: '8px',
-                    padding: '0.5rem',
-                    textAlign: 'center',
-                    fontSize: playerCount > 2 ? '1.3rem' : '1.6rem',
-                    fontWeight: 'bold',
-                    marginBottom: '0.5rem'
-                  }}>
-                    {problems[pIdx]?.question}
-                  </div>
-
-                  {/* 4 TOMBOL RAKSASA (PILIHAN GANDA) */}
-                  <div style={{
-                    flex: 1,
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gridTemplateRows: '1fr 1fr',
-                    gap: '0.5rem'
-                  }}>
-                    {problems[pIdx]?.options.map((opt, oIdx) => (
-                      <button
-                        key={oIdx}
-                        onClick={() => handleAnswer(pIdx, opt)}
-                        style={{
-                          backgroundColor: CAR_COLORS[pIdx].body,
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '10px',
-                          fontSize: playerCount > 2 ? '1.8rem' : '2.2rem',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 0 rgba(0,0,0,0.2)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          userSelect: 'none'
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               ))}
             </div>
-
           </div>
-        )}
-
-        {/* LAYAR PEMENANG / WIN */}
-        {gameState === 'WIN' && (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#1E293B',
-            color: 'white',
-            textAlign: 'center'
-          }}>
-            <h1 style={{ fontSize: '3.5rem', margin: 0 }}>🏆 SELESAI! 🏆</h1>
-            <h2 style={{ fontSize: '2.5rem', color: '#FBBF24', margin: '1rem 0' }}>
-              Selamat {winner?.name}!
-            </h2>
-            <p style={{ fontSize: '1.5rem', color: '#94A3B8' }}>
-              Mobil {winner?.color} berhasil mencapai garis finis terlebih dahulu!
-            </p>
-            <button
-              onClick={() => setGameState('TITLE')}
-              style={{
-                backgroundColor: '#10B981',
-                color: 'white',
-                border: 'none',
-                padding: '1rem 3rem',
-                borderRadius: '12px',
-                fontSize: '1.5rem',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                marginTop: '2rem',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-              }}
-            >
-              Main Lagi 🔄
-            </button>
-          </div>
-        )}
-
+        ))}
       </div>
-    </div>
+    </ScreenWrapper>
+  );
+
+  // --- STEP 4: WINNER SCREEN ---
+  if (step === 4) return (
+    <ScreenWrapper>
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-bounce-slow">
+        <div className="text-8xl mb-6">🏆</div>
+        <h1 className="text-6xl md:text-8xl font-black text-indigo-900 mb-4 drop-shadow-xl" style={{WebkitTextStroke: '2px white'}}>
+          SELESAI!
+        </h1>
+        <div className="bg-white/90 p-8 rounded-[3rem] shadow-2xl border-8 mb-8" style={{ borderColor: winner?.color }}>
+          <h2 className="text-4xl md:text-5xl font-black text-slate-800 mb-4">Pemenangnya adalah:</h2>
+          <div className="text-5xl md:text-7xl font-black" style={{ color: winner?.color }}>
+            {winner?.name}
+          </div>
+        </div>
+        
+        <button 
+          onClick={() => { playAudio('correct'); setStep(1); }} 
+          className="bg-green-500 hover:bg-green-600 text-white font-black text-4xl px-12 py-6 rounded-[2rem] shadow-[0_10px_0_#14532d] active:translate-y-2 active:shadow-none transition-all border-4 border-white"
+        >
+          Main Lagi 🔄
+        </button>
+      </div>
+    </ScreenWrapper>
   );
 }
